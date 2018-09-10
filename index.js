@@ -1,6 +1,8 @@
 'use strict';
 
 const algoliasearch = require('algoliasearch');
+const compareVersions = require('compare-versions');
+const flatten = require('lodash.flatten');
 const HtmlExtractor = require('algolia-html-extractor');
 
 const { extname, join } = require('path');
@@ -27,26 +29,56 @@ module.exports = {
 
         const Extractor = new HtmlExtractor();
 
-        const files = context.distFiles.filter(path => extname(path) === '.html');
+        let files = context.distFiles
+          .filter(path => extname(path) === '.html');
 
-        const promises = files.map((file) => {
+        const allRecords = files.map((file) => {
           const content = readFileSync(join(context.distDir, file), 'utf8');
           const records = Extractor.run(content, {
             tagsToExclude: this.readConfig('tagsToExclude'),
           });
 
-          return new Promise(function(resolve, reject) {
-            index.addObjects(records, (err) => {
-              if(err) {
-                return reject(err);
+          if (this.readConfig('versionPattern')) {
+            let match = file.match(this.readConfig('versionPattern'));
+
+            if(match) {
+              let version = match[1];
+
+              if(!this.readConfig('versionsToIgnore').some(ignoreVersion => compareVersions(version, ignoreVersion))) {
+                return Promise.resolve();
               }
 
-              resolve();
-            });
-          });
+              records.forEach((record) => {
+                record.version = version
+              })
+            }
+          }
+
+          records.forEach(record => {
+            if (this.readConfig('pathPattern')) {
+              let match = file.match(this.readConfig('pathPattern'));
+
+              if(match) {
+                record.path = match[1];
+              }
+            } else {
+              record.path = file
+            }
+          })
+          return records;
         });
 
-        return Promise.all(promises);
+        return new Promise(function(resolve, reject) {
+         index.addObjects(flatten(allRecords), (err) => {
+           if(err) {
+             this.log('Error uploading the index', { color: 'red' });
+             this.log(err, { color: 'red' })
+             return reject(err);
+           }
+
+           resolve();
+         });
+       });
       },
     });
 

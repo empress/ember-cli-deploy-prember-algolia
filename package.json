@@ -23,8 +23,10 @@
   "dependencies": {
     "algolia-html-extractor": "0.0.1",
     "algoliasearch": "^3.30.0",
+    "compare-versions": "^3.4.0",
     "ember-cli-babel": "^6.6.0",
-    "ember-cli-deploy-plugin": "^0.2.9"
+    "ember-cli-deploy-plugin": "^0.2.9",
+    "lodash.flatten": "^4.4.0"
   },
   "devDependencies": {
     "broccoli-asset-rev": "^2.7.0",
