@@ -18,7 +18,9 @@ module.exports = {
       name: options.name,
 
       defaultConfig: Object.freeze({
-        tagsToExclude: ''
+        tagsToExclude: '',
+        cssSelector: 'p',
+        headingSelector: 'h1,h2,h3,h4,h5,h6',
       }),
 
       requiredConfig: Object.freeze(['indexName', 'applicationId', 'apiKey']),
@@ -36,6 +38,8 @@ module.exports = {
           const content = readFileSync(join(context.distDir, file), 'utf8');
           const records = Extractor.run(content, {
             tagsToExclude: this.readConfig('tagsToExclude'),
+            cssSelector: this.readConfig('cssSelector'),
+            headingSelector: this.readConfig('headingSelector'),
           });
 
           if (this.readConfig('versionPattern')) {
