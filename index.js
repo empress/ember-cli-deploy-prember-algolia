@@ -21,6 +21,7 @@ module.exports = {
         tagsToExclude: '',
         cssSelector: 'p',
         headingSelector: 'h1,h2,h3,h4,h5,h6',
+        batchSize: 1000
       }),
 
       requiredConfig: Object.freeze(['indexName', 'applicationId', 'apiKey']),
@@ -28,61 +29,76 @@ module.exports = {
       upload: function(context) {
         var client = algoliasearch(this.readConfig('applicationId'), this.readConfig('apiKey'));
         var index = client.initIndex(this.readConfig('indexName'));
+        var indicesSoFar = [];
+        var collect= function(indices) {
+          indicesSoFar.concat(indices);
+
+          if (indicesSoFar.length >= this.readConfig('batchSize')) {
+            return pushAndClear();
+          }
+        };
+        var pushAndClear = function() {
+
+          return new Promise(function(resolve, reject) {
+            index.addObjects(indicesSoFar, (err) => {
+              if(err) {
+                this.log('Error uploading the index', { color: 'red' });
+                this.log(err, { color: 'red' })
+                return reject(err);
+              }
+              indicesSoFar= [];
+              resolve();
+            });
+          });
+
+        };
 
         const Extractor = new HtmlExtractor();
 
         let files = context.distFiles
           .filter(path => extname(path) === '.html');
 
-        const allRecords = files.map((file) => {
-          const content = readFileSync(join(context.distDir, file), 'utf8');
-          const records = Extractor.run(content, {
-            tagsToExclude: this.readConfig('tagsToExclude'),
-            cssSelector: this.readConfig('cssSelector'),
-            headingSelector: this.readConfig('headingSelector'),
-          });
+        let promise = files.reduce((previous, currentFile) => {
+          previous.then(() => {
+            const content = readFileSync(join(context.distDir, currentFile), 'utf8');
+            const records = Extractor.run(content, {
+              tagsToExclude: this.readConfig('tagsToExclude'),
+              cssSelector: this.readConfig('cssSelector'),
+              headingSelector: this.readConfig('headingSelector'),
+            });
 
-          if (this.readConfig('versionPattern')) {
-            let match = file.match(this.readConfig('versionPattern'));
-
-            if(match) {
-              let version = match[1];
-
-              if(!this.readConfig('versionsToIgnore').some(ignoreVersion => compareVersions(version, ignoreVersion))) {
-                return Promise.resolve();
-              }
-
-              records.forEach((record) => {
-                record.version = version
-              })
-            }
-          }
-
-          records.forEach(record => {
-            if (this.readConfig('pathPattern')) {
-              let match = file.match(this.readConfig('pathPattern'));
+            if (this.readConfig('versionPattern')) {
+              let match = currentFile.match(this.readConfig('versionPattern'));
 
               if(match) {
-                record.path = match[1];
+                let version = match[1];
+
+                if(!this.readConfig('versionsToIgnore').some(ignoreVersion => compareVersions(version, ignoreVersion))) {
+                  return Promise.resolve();
+                }
+
+                records.forEach((record) => {
+                  record.version = version
+                })
               }
-            } else {
-              record.path = file
             }
-          })
-          return records;
-        });
 
-        return new Promise(function(resolve, reject) {
-         index.addObjects(flatten(allRecords), (err) => {
-           if(err) {
-             this.log('Error uploading the index', { color: 'red' });
-             this.log(err, { color: 'red' })
-             return reject(err);
-           }
+            records.forEach(record => {
+              if (this.readConfig('pathPattern')) {
+                let match = currentFile.match(this.readConfig('pathPattern'));
 
-           resolve();
-         });
-       });
+                if(match) {
+                  record.path = match[1];
+                }
+              } else {
+                record.path = currentFile
+              }
+            })
+
+            return collect(records);
+          });
+        }, Promise.resolve());
+        return promise.then(() => pushAndClear())
       },
     });
 
