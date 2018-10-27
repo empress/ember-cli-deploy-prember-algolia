@@ -2,7 +2,6 @@
 
 const algoliasearch = require('algoliasearch');
 const compareVersions = require('compare-versions');
-const flatten = require('lodash.flatten');
 const HtmlExtractor = require('algolia-html-extractor');
 
 const { extname, join } = require('path');
@@ -26,79 +25,93 @@ module.exports = {
 
       requiredConfig: Object.freeze(['indexName', 'applicationId', 'apiKey']),
 
-      upload: function(context) {
-        var client = algoliasearch(this.readConfig('applicationId'), this.readConfig('apiKey'));
-        var index = client.initIndex(this.readConfig('indexName'));
-        var indicesSoFar = [];
-        var collect= function(indices) {
-          indicesSoFar.concat(indices);
+      async collect(indexes) {
+        this.log(typeof this.indexesSoFar);
+        if(typeof this.indexesSoFar === 'undefined') {
+          this.log('setting indexes to empty')
+          this.indexesSoFar = [];
+        }
 
-          if (indicesSoFar.length >= this.readConfig('batchSize')) {
-            return pushAndClear();
-          }
-        };
-        var pushAndClear = function() {
+        this.log(`Collecting ${indexes.length} indexes and adding them to ${this.indexesSoFar.length} collected so far`);
 
-          return new Promise(function(resolve, reject) {
-            index.addObjects(indicesSoFar, (err) => {
-              if(err) {
-                this.log('Error uploading the index', { color: 'red' });
-                this.log(err, { color: 'red' })
-                return reject(err);
-              }
-              indicesSoFar= [];
-              resolve();
-            });
+        this.indexesSoFar = this.indexesSoFar.concat(indexes);
+
+        this.log(`now the length is ${this.indexesSoFar.length}`);
+
+        if (this.indexesSoFar.length >= this.readConfig('batchSize')) {
+          await this.pushAndClear();
+        }
+      },
+
+      async pushAndClear() {
+        this.log(`Pushing ${this.indexesSoFar.length} indexes to Algolia`);
+
+        return new Promise((resolve, reject) => {
+          this.index.addObjects(this.indexesSoFar, (err) => {
+            if(err) {
+              this.log('Error uploading the index', { color: 'red' });
+              this.log(err, { color: 'red' })
+              return reject(err);
+            }
+            this.indexesSoFar = [];
+            resolve();
           });
+        });
+      },
 
-        };
+      upload: async function(context) {
+        this.log('About to start uploading');
+        var client = algoliasearch(this.readConfig('applicationId'), this.readConfig('apiKey'));
+        this.index = client.initIndex(this.readConfig('indexName'));
 
         const Extractor = new HtmlExtractor();
 
         let files = context.distFiles
           .filter(path => extname(path) === '.html');
 
-        let promise = files.reduce((previous, currentFile) => {
-          previous.then(() => {
-            const content = readFileSync(join(context.distDir, currentFile), 'utf8');
-            const records = Extractor.run(content, {
-              tagsToExclude: this.readConfig('tagsToExclude'),
-              cssSelector: this.readConfig('cssSelector'),
-              headingSelector: this.readConfig('headingSelector'),
-            });
+        for (const file of files) {
+          const content = readFileSync(join(context.distDir, file), 'utf8');
+          const records = Extractor.run(content, {
+            tagsToExclude: this.readConfig('tagsToExclude'),
+            cssSelector: this.readConfig('cssSelector'),
+            headingSelector: this.readConfig('headingSelector'),
+          });
 
-            if (this.readConfig('versionPattern')) {
-              let match = currentFile.match(this.readConfig('versionPattern'));
+          if (this.readConfig('versionPattern')) {
+            let match = file.match(this.readConfig('versionPattern'));
+
+            if(match) {
+              let version = match[1];
+
+              if(!this.readConfig('versionsToIgnore').some(ignoreVersion => compareVersions(version, ignoreVersion))) {
+                return Promise.resolve();
+              }
+
+              records.forEach((record) => {
+                record.version = version
+                record.objectID = `${version}-${record.objectID}`;
+              })
+            }
+          }
+
+          records.forEach(record => {
+            if (this.readConfig('pathPattern')) {
+              let match = file.match(this.readConfig('pathPattern'));
 
               if(match) {
-                let version = match[1];
-
-                if(!this.readConfig('versionsToIgnore').some(ignoreVersion => compareVersions(version, ignoreVersion))) {
-                  return Promise.resolve();
-                }
-
-                records.forEach((record) => {
-                  record.version = version
-                })
+                record.path = match[1];
               }
+            } else {
+              record.path = file
             }
+          })
 
-            records.forEach(record => {
-              if (this.readConfig('pathPattern')) {
-                let match = currentFile.match(this.readConfig('pathPattern'));
+          await this.collect(records);
+        }
 
-                if(match) {
-                  record.path = match[1];
-                }
-              } else {
-                record.path = currentFile
-              }
-            })
+        await this.pushAndClear();
 
-            return collect(records);
-          });
-        }, Promise.resolve());
-        return promise.then(() => pushAndClear())
+        this.log('all done');
       },
     });
 
