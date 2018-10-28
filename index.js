@@ -25,7 +25,7 @@ module.exports = {
 
       requiredConfig: Object.freeze(['indexName', 'applicationId', 'apiKey']),
 
-      async collect(indexes) {
+      collect(indexes) {
         if(typeof this.indexesSoFar === 'undefined') {
           this.log('setting indexes to empty')
           this.indexesSoFar = [];
@@ -64,13 +64,25 @@ module.exports = {
         var client = algoliasearch(this.readConfig('applicationId'), this.readConfig('apiKey'));
         this.index = client.initIndex(this.readConfig('indexName'));
 
-        const Extractor = new HtmlExtractor();
-
         let files = context.distFiles
           .filter(path => extname(path) === '.html');
 
         for (const file of files) {
-          this.log(`Processing File ${file}`);
+          let version;
+
+          if (this.readConfig('versionPattern')) {
+            let match = file.match(this.readConfig('versionPattern'));
+            if(match) {
+              version = match[1];
+
+              // versionsToIgnore is a "deny list" of versions. If the current versions is in this list then it should not be indexed
+              if(this.readConfig('versionsToIgnore') && !this.readConfig('versionsToIgnore').some(ignoreVersion => compareVersions(version, ignoreVersion))) {
+                continue;
+              }
+            }
+          }
+
+          const Extractor = new HtmlExtractor();
 
           const content = readFileSync(join(context.distDir, file), 'utf8');
           const records = Extractor.run(content, {
@@ -79,21 +91,11 @@ module.exports = {
             headingSelector: this.readConfig('headingSelector'),
           });
 
-          if (this.readConfig('versionPattern')) {
-            let match = file.match(this.readConfig('versionPattern'));
-
-            if(match) {
-              let version = match[1];
-
-              if(!this.readConfig('versionsToIgnore').some(ignoreVersion => compareVersions(version, ignoreVersion))) {
-                return Promise.resolve();
-              }
-
-              records.forEach((record) => {
-                record.version = version
-                record.objectID = `${version}-${record.objectID}`;
-              })
-            }
+          if (version) {
+            records.forEach((record) => {
+              record.version = version
+              record.objectID = `${version}-${record.objectID}`;
+            })
           }
 
           records.forEach(record => {
