@@ -26,7 +26,6 @@ module.exports = {
       requiredConfig: Object.freeze(['indexName', 'applicationId', 'apiKey']),
 
       async collect(indexes) {
-        this.log(typeof this.indexesSoFar);
         if(typeof this.indexesSoFar === 'undefined') {
           this.log('setting indexes to empty')
           this.indexesSoFar = [];
@@ -34,16 +33,16 @@ module.exports = {
 
         this.log(`Collecting ${indexes.length} indexes and adding them to ${this.indexesSoFar.length} collected so far`);
 
-        this.indexesSoFar = this.indexesSoFar.concat(indexes);
+        this.indexesSoFar.push(...indexes);
 
         this.log(`now the length is ${this.indexesSoFar.length}`);
 
         if (this.indexesSoFar.length >= this.readConfig('batchSize')) {
-          await this.pushAndClear();
+          return this.pushAndClear();
         }
       },
 
-      async pushAndClear() {
+      pushAndClear() {
         this.log(`Pushing ${this.indexesSoFar.length} indexes to Algolia`);
 
         return new Promise((resolve, reject) => {
@@ -53,6 +52,7 @@ module.exports = {
               this.log(err, { color: 'red' })
               return reject(err);
             }
+            delete this.indexesSoFar;
             this.indexesSoFar = [];
             resolve();
           });
@@ -70,6 +70,8 @@ module.exports = {
           .filter(path => extname(path) === '.html');
 
         for (const file of files) {
+          this.log(`Processing File ${file}`);
+
           const content = readFileSync(join(context.distDir, file), 'utf8');
           const records = Extractor.run(content, {
             tagsToExclude: this.readConfig('tagsToExclude'),
