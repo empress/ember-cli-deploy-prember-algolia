@@ -27,15 +27,10 @@ module.exports = {
 
       collect(indexes) {
         if(typeof this.indexesSoFar === 'undefined') {
-          this.log('setting indexes to empty')
           this.indexesSoFar = [];
         }
 
-        this.log(`Collecting ${indexes.length} indexes and adding them to ${this.indexesSoFar.length} collected so far`);
-
         this.indexesSoFar.push(...indexes);
-
-        this.log(`now the length is ${this.indexesSoFar.length}`);
 
         if (this.indexesSoFar.length >= this.readConfig('batchSize')) {
           return this.pushAndClear();
@@ -115,7 +110,7 @@ module.exports = {
 
         await this.pushAndClear();
 
-        this.log('all done');
+        this.log('all done!');
       },
     });
 
