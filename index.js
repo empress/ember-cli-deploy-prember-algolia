@@ -20,6 +20,7 @@ module.exports = {
         tagsToExclude: '',
         cssSelector: 'p',
         headingSelector: 'h1,h2,h3,h4,h5,h6',
+        versionsToIgnore: [],
         batchSize: 1000
       }),
 
@@ -71,7 +72,8 @@ module.exports = {
               version = match[1];
 
               // versionsToIgnore is a "deny list" of versions. If the current versions is in this list then it should not be indexed
-              if(this.readConfig('versionsToIgnore') && !this.readConfig('versionsToIgnore').some(ignoreVersion => compareVersions(version, ignoreVersion))) {
+              if(this.readConfig('versionsToIgnore').some(ignoreVersion => compareVersions(version, ignoreVersion))) {
+                this.log(`Skipping version ${version} because it is in 'versionsToIgnore' config`);
                 continue;
               }
             }
